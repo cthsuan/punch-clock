@@ -47,10 +47,14 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh
 .spinner{width:44px;height:44px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .overlay-text{color:#fff;font-size:15px;font-weight:500}
-.not-registered{background:var(--card);border-radius:16px;padding:32px 24px;text-align:center;box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px}
+.not-registered{background:var(--card);border-radius:16px;padding:28px 24px;text-align:center;box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px}
 .not-registered .icon{font-size:48px;margin-bottom:12px}
 .not-registered h3{font-size:17px;font-weight:700;color:var(--text);margin-bottom:8px}
 .not-registered p{font-size:13px;color:var(--text-sub);line-height:1.6}
+.dept-input{width:100%;margin-top:16px;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-family:'Noto Sans TC',sans-serif;font-size:14px;color:var(--text);outline:none;background:#fafafa}
+.dept-input:focus{border-color:var(--green)}
+.btn-apply{width:100%;margin-top:12px;padding:14px;border-radius:12px;border:none;background:var(--green);color:#fff;font-family:'Noto Sans TC',sans-serif;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:1px;box-shadow:0 4px 16px rgba(6,199,85,.25)}
+.btn-apply:disabled{opacity:.5;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -74,12 +78,15 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh
     </div>
   </div>
 
+  <!-- 尚未開通：顯示申請表單 -->
   <div class="not-registered" id="notRegistered" style="display:none">
-    <div class="icon">🚫</div>
+    <div class="icon">🌱</div>
     <h3>尚未開通打卡權限</h3>
-    <p>您的 LINE 帳號尚未登記，<br>請聯絡管理員開通。</p>
-    <p style="margin-top:16px;font-size:12px;color:#888">您的 LINE User ID：</p>
-    <p id="showUserId" style="font-size:12px;font-family:monospace;background:#f0f0f0;padding:8px;border-radius:8px;margin-top:4px;word-break:break-all;color:#333"></p>
+    <p>請填寫您的姓名與部門，<br>送出申請後等待管理員審核開通。</p>
+    <input class="dept-input" id="inputName" type="text" placeholder="姓名（必填）" maxlength="20">
+    <input class="dept-input" id="inputDept" type="text" placeholder="部門（選填，例如：園藝部）" maxlength="20" style="margin-top:8px">
+    <button class="btn-apply" id="btnApply" onclick="applyRegister()">📩 送出申請</button>
+    <p id="applyMsg" style="display:none;margin-top:12px;font-size:13px;color:var(--green);font-weight:600"></p>
   </div>
 
   <div class="time-card">
@@ -108,7 +115,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh
 </div>
 
 <script>
-// ⚙️ 這兩行填你自己的值
 const LIFF_ID = '2009843438-TvfoYKfo';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyUyPVB7DNCxEqX1Q_omP1ku_elffhHPB1F7fbNfPTKV9lNPfzW99-ym8JtxKtSuCjgNA/exec';
 const CO_LAT  = 25.086882;
@@ -152,6 +158,42 @@ function showMsg(txt,type){const e=document.getElementById('message');e.textCont
 function showOv(txt){document.getElementById('overlayText').textContent=txt;document.getElementById('overlay').classList.add('show');}
 function hideOv(){document.getElementById('overlay').classList.remove('show');}
 function setBtns(dis){document.getElementById('btnIn').disabled=dis;document.getElementById('btnOut').disabled=dis;}
+
+// 申請開通
+async function applyRegister(){
+  const name = document.getElementById('inputName').value.trim();
+  if(!name){ alert('請填寫姓名'); return; }
+  const dept = document.getElementById('inputDept').value.trim();
+  const btn  = document.getElementById('btnApply');
+  btn.disabled = true;
+  btn.textContent = '送出中...';
+  try{
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'registerRequest',
+        userId: profile.userId,
+        displayName: profile.displayName,
+        name, dept
+      })
+    });
+    const data = await res.json();
+    if(data.success){
+      document.getElementById('inputName').style.display='none';
+      document.getElementById('inputDept').style.display='none';
+      btn.style.display='none';
+      const msg = document.getElementById('applyMsg');
+      msg.style.display='block';
+      msg.textContent='✅ 申請已送出！管理員審核後即可打卡。';
+    }else{
+      btn.disabled=false; btn.textContent='📩 送出申請';
+      alert('送出失敗：'+(data.error||'請稍後再試'));
+    }
+  }catch(e){
+    btn.disabled=false; btn.textContent='📩 送出申請';
+    alert('網路錯誤，請稍後再試');
+  }
+}
 
 async function loadRecords(uid){
   try{
@@ -216,7 +258,6 @@ async function init(){
     document.getElementById('userAvatar').src=profile.pictureUrl||'';
     document.getElementById('userName').textContent=profile.displayName;
     document.getElementById('userId').textContent='ID: '+profile.userId;
-    document.getElementById('showUserId').textContent=profile.userId;
 
     const [regRes,posRes]=await Promise.allSettled([
       fetch(GAS_URL+'?action=checkUser&userId='+encodeURIComponent(profile.userId)).then(r=>r.json()),
@@ -229,6 +270,9 @@ async function init(){
       document.getElementById('userCard').style.display='none';
       document.getElementById('notRegistered').style.display='block';
       document.getElementById('btnRow').style.display='none';
+      document.getElementById('recordsList').innerHTML='';
+      document.getElementById('gpsValue').textContent='開通後才可使用';
+      document.getElementById('gpsDot').className='gps-dot';
       return;
     }
 
