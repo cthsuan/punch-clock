@@ -1,0 +1,407 @@
+// ==========================================
+// 海棠園藝 LINE 打卡系統 - Apps Script 完整版
+// ==========================================
+
+const SHEET_ID         = '1N7yMfDCUWAV_SGmrPWctTtiAq-WX_HOmETxLuOokhOA';
+const COMPANY_LAT      = 25.086882;
+const COMPANY_LNG      = 121.591002;
+const ALLOWED_RADIUS   = 150;
+const LIFF_ID          = '2009843438-TvfoYKfo';
+
+const SHEET_EMPLOYEES  = '員工名單';
+const SHEET_RECORDS    = '打卡記錄';
+
+function doGet(e) {
+  const action = e.parameter.action;
+  if (!action) {
+    return HtmlService.createHtmlOutput(getHtml())
+      .setTitle('員工打卡系統')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  try {
+    if (action === 'checkUser')  return checkUser(e.parameter.userId);
+    if (action === 'getRecords') return getTodayRecords(e.parameter.userId);
+    return jsonResponse({ error: '未知的 action' });
+  } catch (err) {
+    return jsonResponse({ error: err.message });
+  }
+}
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    if (data.action === 'punch') return handlePunch(data);
+    return jsonResponse({ error: '未知的 action' });
+  } catch (err) {
+    return jsonResponse({ error: err.message });
+  }
+}
+
+function checkUser(userId) {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_EMPLOYEES);
+  const data  = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === String(userId).trim()) {
+      return jsonResponse({ registered: true, name: data[i][1], dept: data[i][2] });
+    }
+  }
+  return jsonResponse({ registered: false });
+}
+
+function handlePunch(data) {
+  const ss       = SpreadsheetApp.openById(SHEET_ID);
+  const empData  = ss.getSheetByName(SHEET_EMPLOYEES).getDataRange().getValues();
+  let empName = data.displayName, empDept = '';
+  for (let i = 1; i < empData.length; i++) {
+    if (String(empData[i][0]).trim() === String(data.userId).trim()) {
+      empName = empData[i][1] || data.displayName;
+      empDept = empData[i][2] || '';
+      break;
+    }
+  }
+  const now     = new Date();
+  const dateStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy/MM/dd');
+  const timeStr = Utilities.formatDate(now, 'Asia/Taipei', 'HH:mm:ss');
+  ss.getSheetByName(SHEET_RECORDS).appendRow([
+    dateStr, timeStr, empName, empDept, data.userId,
+    data.type,
+    data.lat.toFixed(6) + ', ' + data.lng.toFixed(6),
+    data.distance, data.accuracy || '', '成功'
+  ]);
+  return jsonResponse({ success: true, name: empName, type: data.type, time: timeStr, distance: data.distance });
+}
+
+function getTodayRecords(userId) {
+  const sheet  = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_RECORDS);
+  const data   = sheet.getDataRange().getValues();
+  const today  = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd');
+  const records = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === today && String(data[i][4]).trim() === String(userId).trim()) {
+      records.push({ date: data[i][0], time: data[i][1], name: data[i][2],
+                     type: data[i][5], gps: data[i][6], distance: data[i][7], status: data[i][9] });
+    }
+  }
+  records.reverse();
+  return jsonResponse({ records });
+}
+
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function setupSheets() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let emp = ss.getSheetByName(SHEET_EMPLOYEES) || ss.insertSheet(SHEET_EMPLOYEES);
+  emp.getRange(1,1,1,3).setValues([['LINE User ID','姓名','部門']]);
+  emp.getRange(1,1,1,3).setFontWeight('bold').setBackground('#06C755').setFontColor('white');
+  [220,120,120].forEach((w,i) => emp.setColumnWidth(i+1,w));
+
+  let rec = ss.getSheetByName(SHEET_RECORDS) || ss.insertSheet(SHEET_RECORDS);
+  const headers = ['日期','時間','姓名','部門','LINE User ID','類型','GPS座標','距離(m)','GPS精度(m)','狀態'];
+  rec.getRange(1,1,1,headers.length).setValues([headers]);
+  rec.getRange(1,1,1,headers.length).setFontWeight('bold').setBackground('#1a2e1a').setFontColor('white');
+  [120,80,100,100,220,60,180,80,90,80].forEach((w,i) => rec.setColumnWidth(i+1,w));
+  Logger.log('✅ 完成');
+}
+
+function getHtml() {
+  const GAS_URL = https://script.google.com/macros/s/AKfycbyUyPVB7DNCxEqX1Q_omP1ku_elffhHPB1F7fbNfPTKV9lNPfzW99-ym8JtxKtSuCjgNA/exec;
+  return `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>員工打卡系統</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"><\/script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+:root{--green:#06C755;--green-dark:#05a847;--orange:#FF6B35;--orange-dark:#e55a25;--bg:#F0F4F0;--card:#fff;--text:#1a2e1a;--text-sub:#5a7a5a;--border:#d4e4d4;--shadow:0 4px 24px rgba(6,199,85,.10)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 0 40px}
+.header{width:100%;background:var(--green);padding:20px 24px 24px;color:#fff;position:relative;overflow:hidden}
+.header::after{content:'';position:absolute;bottom:-30px;left:0;right:0;height:60px;background:var(--bg);border-radius:50% 50% 0 0/100% 100% 0 0}
+.header-top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.header-icon{font-size:28px}.header h1{font-size:20px;font-weight:700;letter-spacing:1px}
+.header-sub{font-size:13px;opacity:.85;padding-left:40px}
+.content{width:100%;max-width:420px;padding:16px 16px 0}
+.user-card{background:var(--card);border-radius:16px;padding:20px;display:flex;align-items:center;gap:16px;box-shadow:var(--shadow);margin-bottom:16px;border:1px solid var(--border)}
+.user-avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:3px solid var(--green);background:var(--border);flex-shrink:0}
+.user-info{flex:1}.user-name{font-size:17px;font-weight:700;color:var(--text)}
+.user-id{font-size:11px;color:var(--text-sub);margin-top:2px;word-break:break-all}
+.time-card{background:var(--card);border-radius:16px;padding:20px;text-align:center;box-shadow:var(--shadow);margin-bottom:16px;border:1px solid var(--border)}
+.time-display{font-size:42px;font-weight:700;color:var(--text);letter-spacing:2px;line-height:1;margin-bottom:4px}
+.date-display{font-size:14px;color:var(--text-sub)}
+.gps-card{background:var(--card);border-radius:16px;padding:16px 20px;box-shadow:var(--shadow);margin-bottom:20px;border:1px solid var(--border)}
+.gps-title{font-size:13px;font-weight:600;color:var(--text-sub);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.gps-value{font-size:13px;color:var(--text);font-family:monospace;word-break:break-all}
+.gps-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc;margin-right:6px;flex-shrink:0}
+.gps-dot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+.gps-dot.err{background:#e53935;box-shadow:0 0 6px #e53935}
+.gps-dot.loading{background:#FFA000;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.btn{padding:18px 8px;border-radius:14px;border:none;font-family:'Noto Sans TC',sans-serif;font-size:18px;font-weight:700;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;align-items:center;gap:6px;letter-spacing:1px;box-shadow:0 4px 16px rgba(0,0,0,.10)}
+.btn:active{transform:scale(.96)}.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-in{background:var(--green);color:#fff}.btn-out{background:var(--orange);color:#fff}
+.btn-icon{font-size:26px}
+.message{border-radius:12px;padding:14px 18px;font-size:14px;font-weight:500;text-align:center;margin-bottom:16px;display:none;line-height:1.6;white-space:pre-line}
+.message.success{display:block;background:#e8f8ee;color:#1b6b35;border:1px solid #b6dfc7}
+.message.error{display:block;background:#fdecea;color:#b71c1c;border:1px solid #f5c6c2}
+.message.info{display:block;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
+.records-title{font-size:13px;font-weight:600;color:var(--text-sub);margin-bottom:10px;padding-left:4px}
+.record-item{background:var(--card);border-radius:12px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;border:1px solid var(--border);font-size:13px}
+.record-info{flex:1}.record-time{font-weight:600;color:var(--text)}.record-status{color:var(--text-sub);font-size:12px}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.overlay.show{display:flex}
+.spinner{width:44px;height:44px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.overlay-text{color:#fff;font-size:15px;font-weight:500}
+.not-registered{background:var(--card);border-radius:16px;padding:32px 24px;text-align:center;box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px}
+.not-registered .icon{font-size:48px;margin-bottom:12px}
+.not-registered h3{font-size:17px;font-weight:700;color:var(--text);margin-bottom:8px}
+.not-registered p{font-size:13px;color:var(--text-sub);line-height:1.6}
+/* debug bar */
+#debugBar{background:#1a1a2e;color:#00ff88;font-family:monospace;font-size:11px;padding:8px 12px;width:100%;word-break:break-all;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+
+<div class="overlay" id="overlay">
+  <div class="spinner"></div>
+  <div class="overlay-text" id="overlayText">處理中...</div>
+</div>
+
+<!-- Debug bar（顯示載入步驟） -->
+<div id="debugBar"></div>
+
+<div class="header">
+  <div class="header-top"><span class="header-icon">🌿</span><h1>員工打卡系統</h1></div>
+  <div class="header-sub">海棠園藝有限公司</div>
+</div>
+
+<div class="content">
+  <div class="user-card" id="userCard">
+    <img class="user-avatar" id="userAvatar" src="" alt="頭貼">
+    <div class="user-info">
+      <div class="user-name" id="userName">載入中...</div>
+      <div class="user-id" id="userId"></div>
+    </div>
+  </div>
+
+  <div class="not-registered" id="notRegistered" style="display:none">
+    <div class="icon">🚫</div>
+    <h3>尚未開通打卡權限</h3>
+    <p>您的 LINE 帳號尚未登記，<br>請聯絡管理員開通。</p>
+  </div>
+
+  <div class="time-card">
+    <div class="time-display" id="clock">--:--:--</div>
+    <div class="date-display" id="dateDisplay"></div>
+  </div>
+
+  <div class="gps-card">
+    <div class="gps-title"><span class="gps-dot loading" id="gpsDot"></span>📍 定位狀態</div>
+    <div class="gps-value" id="gpsValue">取得位置中...</div>
+  </div>
+
+  <div class="message" id="message"></div>
+
+  <div class="btn-row" id="btnRow">
+    <button class="btn btn-in" id="btnIn" onclick="doPunch('上班')" disabled>
+      <span class="btn-icon">🟢</span>上班打卡
+    </button>
+    <button class="btn btn-out" id="btnOut" onclick="doPunch('下班')" disabled>
+      <span class="btn-icon">🔴</span>下班打卡
+    </button>
+  </div>
+
+  <div class="records-title">📋 今日打卡記錄</div>
+  <div id="recordsList"><div style="text-align:center;color:#aaa;padding:20px;font-size:13px">載入中...</div></div>
+</div>
+
+<script>
+const LIFF_ID = '${LIFF_ID}';
+const GAS_URL = '${GAS_URL}';
+const CO_LAT  = ${COMPANY_LAT};
+const CO_LNG  = ${COMPANY_LNG};
+const RADIUS  = ${ALLOWED_RADIUS};
+
+let profile = null;
+
+// ── Debug logger ──────────────────────────────
+const dbg = document.getElementById('debugBar');
+function log(msg) {
+  dbg.style.display = 'block';
+  dbg.textContent += '[' + new Date().toLocaleTimeString('zh-TW',{hour12:false}) + '] ' + msg + '\\n';
+  console.log(msg);
+}
+
+// ── Clock ─────────────────────────────────────
+function tick() {
+  const n = new Date();
+  document.getElementById('clock').textContent = n.toLocaleTimeString('zh-TW',{hour12:false});
+  document.getElementById('dateDisplay').textContent =
+    n.toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
+}
+setInterval(tick,1000); tick();
+
+// ── Haversine ─────────────────────────────────
+function dist(la1,lo1,la2,lo2){
+  const R=6371000,d2r=Math.PI/180;
+  const dLa=(la2-la1)*d2r,dLo=(lo2-lo1)*d2r;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*d2r)*Math.cos(la2*d2r)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ── GPS ───────────────────────────────────────
+function getGPS(){
+  return new Promise((res,rej)=>{
+    if(!navigator.geolocation){rej(new Error('瀏覽器不支援定位'));return;}
+    navigator.geolocation.getCurrentPosition(res,rej,{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+  });
+}
+
+function updateGPS(pos,d){
+  const ok=d<=RADIUS;
+  document.getElementById('gpsDot').className='gps-dot '+(ok?'ok':'err');
+  document.getElementById('gpsValue').textContent=
+    pos.coords.latitude.toFixed(6)+', '+pos.coords.longitude.toFixed(6)+
+    '  距公司 '+Math.round(d)+'m'+(ok?'  ✅ 範圍內':'  ⚠️ 超出範圍（限'+RADIUS+'m）');
+  return ok;
+}
+
+// ── UI helpers ────────────────────────────────
+function showMsg(txt,type){const e=document.getElementById('message');e.textContent=txt;e.className='message '+type;}
+function showOv(txt){document.getElementById('overlayText').textContent=txt;document.getElementById('overlay').classList.add('show');}
+function hideOv(){document.getElementById('overlay').classList.remove('show');}
+function setBtns(dis){document.getElementById('btnIn').disabled=dis;document.getElementById('btnOut').disabled=dis;}
+
+// ── Load today records ────────────────────────
+async function loadRecords(uid){
+  try{
+    log('載入今日記錄...');
+    const r=await fetch(GAS_URL+'?action=getRecords&userId='+encodeURIComponent(uid));
+    const d=await r.json();
+    log('記錄數：'+(d.records?d.records.length:0));
+    const el=document.getElementById('recordsList');
+    if(!d.records||!d.records.length){
+      el.innerHTML='<div style="text-align:center;color:#aaa;padding:20px;font-size:13px">今日尚無記錄</div>';return;
+    }
+    el.innerHTML=d.records.map(r=>\`
+      <div class="record-item">
+        <span style="font-size:20px">\${r.type==='上班'?'🟢':'🔴'}</span>
+        <div class="record-info">
+          <div class="record-time">\${r.type} \${r.time}</div>
+          <div class="record-status">\${r.status==='成功'?'✅ 成功':'❌ '+r.status}  距公司 \${r.distance}m</div>
+        </div>
+      </div>\`).join('');
+  }catch(e){
+    log('載入記錄失敗：'+e.message);
+    document.getElementById('recordsList').innerHTML='<div style="text-align:center;color:#aaa;padding:20px;font-size:13px">無法載入記錄</div>';
+  }
+}
+
+// ── Punch ─────────────────────────────────────
+async function doPunch(type){
+  showOv('取得定位中...'); setBtns(true);
+  try{
+    const pos=await getGPS();
+    const d=dist(pos.coords.latitude,pos.coords.longitude,CO_LAT,CO_LNG);
+    const ok=updateGPS(pos,d);
+    if(!ok){
+      hideOv();
+      showMsg('❌ 打卡失敗：不在公司範圍內\\n（距離 '+Math.round(d)+'m，限制 '+RADIUS+'m）','error');
+      setBtns(false);return;
+    }
+    showOv('送出打卡中...');
+    const res=await fetch(GAS_URL,{
+      method:'POST',
+      body:JSON.stringify({
+        action:'punch',userId:profile.userId,displayName:profile.displayName,
+        type,lat:pos.coords.latitude,lng:pos.coords.longitude,
+        distance:Math.round(d),accuracy:Math.round(pos.coords.accuracy)
+      })
+    });
+    const data=await res.json();
+    hideOv();
+    if(data.success){
+      showMsg('✅ '+type+'打卡成功！\\n時間：'+data.time,'success');
+      await loadRecords(profile.userId);
+    }else{
+      showMsg('❌ 失敗：'+(data.error||'未知錯誤'),'error');
+    }
+  }catch(e){
+    hideOv();
+    log('打卡錯誤：'+e.message);
+    showMsg('❌ 定位失敗，請確認已開啟位置權限\\n錯誤：'+e.message,'error');
+  }finally{setBtns(false);}
+}
+
+// ── Init ──────────────────────────────────────
+async function init(){
+  try{
+    log('GAS_URL: '+GAS_URL);
+    log('LIFF 初始化中...');
+    await liff.init({liffId:LIFF_ID});
+    log('LIFF 初始化完成，isLoggedIn: '+liff.isLoggedIn());
+
+    if(!liff.isLoggedIn()){
+      log('未登入，執行 liff.login()');
+      liff.login();
+      return;
+    }
+
+    log('取得 LINE 個人資料...');
+    profile=await liff.getProfile();
+    log('Profile: '+profile.displayName+' / '+profile.userId);
+
+    document.getElementById('userAvatar').src=profile.pictureUrl||'';
+    document.getElementById('userName').textContent=profile.displayName;
+    document.getElementById('userId').textContent='ID: '+profile.userId;
+
+    // 同時執行：驗證員工 + 取得 GPS
+    log('驗證員工身分 + 取得 GPS...');
+    const [regRes,posRes]=await Promise.allSettled([
+      fetch(GAS_URL+'?action=checkUser&userId='+encodeURIComponent(profile.userId)).then(r=>r.json()),
+      getGPS()
+    ]);
+
+    // 員工驗證結果
+    log('員工驗證: '+JSON.stringify(regRes));
+    if(regRes.status==='fulfilled'&&regRes.value.registered){
+      document.getElementById('notRegistered').style.display='none';
+    }else{
+      log('員工未登記或驗證失敗');
+      document.getElementById('userCard').style.display='none';
+      document.getElementById('notRegistered').style.display='block';
+      document.getElementById('btnRow').style.display='none';
+      return;
+    }
+
+    // GPS 結果
+    log('GPS: '+posRes.status+(posRes.reason?' err:'+posRes.reason.message:''));
+    if(posRes.status==='fulfilled'){
+      const pos=posRes.value;
+      const d=dist(pos.coords.latitude,pos.coords.longitude,CO_LAT,CO_LNG);
+      updateGPS(pos,d);
+      setBtns(false);
+    }else{
+      document.getElementById('gpsDot').className='gps-dot err';
+      document.getElementById('gpsValue').textContent='無法取得定位，請開啟位置權限（'+posRes.reason.message+')';
+    }
+
+    await loadRecords(profile.userId);
+    log('✅ 初始化完成');
+
+  }catch(e){
+    log('❌ 初始化錯誤：'+e.message);
+    showMsg('系統初始化失敗：'+e.message,'error');
+  }
+}
+init();
+<\/script>
+</body>
+</html>`;
+}
