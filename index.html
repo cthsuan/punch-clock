@@ -78,6 +78,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh
     <div class="icon">🚫</div>
     <h3>尚未開通打卡權限</h3>
     <p>您的 LINE 帳號尚未登記，<br>請聯絡管理員開通。</p>
+    <p style="margin-top:16px;font-size:12px;color:#888">您的 LINE User ID：</p>
+    <p id="showUserId" style="font-size:12px;font-family:monospace;background:#f0f0f0;padding:8px;border-radius:8px;margin-top:4px;word-break:break-all;color:#333"></p>
   </div>
 
   <div class="time-card">
@@ -214,6 +216,7 @@ async function init(){
     document.getElementById('userAvatar').src=profile.pictureUrl||'';
     document.getElementById('userName').textContent=profile.displayName;
     document.getElementById('userId').textContent='ID: '+profile.userId;
+    document.getElementById('showUserId').textContent=profile.userId;
 
     const [regRes,posRes]=await Promise.allSettled([
       fetch(GAS_URL+'?action=checkUser&userId='+encodeURIComponent(profile.userId)).then(r=>r.json()),
